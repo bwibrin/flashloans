@@ -99,9 +99,9 @@ contract FlashloanDemo is FlashLoanReceiverBase, Withdrawable {
         _flashloan(assets, amounts);
     }
 
-    function setArbitrageContract (address _newArbitrageContract) external {
-        address _previousArbitrageContract = address(arbitrageContract);
-        arbitrageContract = IMockArbitrage(_newArbitrageContract);
-        emit UpdatedArbitrageContract (_previousArbitrageContract, _newArbitrageContract);
-    }
+    // function setArbitrageContract (address _newArbitrageContract) external {
+    //     address _previousArbitrageContract = address(arbitrageContract);
+    //     arbitrageContract = IMockArbitrage(_newArbitrageContract);
+    //     emit UpdatedArbitrageContract (_previousArbitrageContract, _newArbitrageContract);
+    // }
 }
