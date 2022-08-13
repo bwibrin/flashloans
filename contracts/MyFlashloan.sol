@@ -1,19 +1,27 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.6.6;
+pragma solidity >=0.6.6;
 
 import { FlashLoanReceiverBase } from "./FlashloanReceiverBase.sol";
-import { ILendingPool, ILendingPoolAddressesProvider, IERC20, IMockArbitrage } from "./Interfaces.sol";
+// import { ILendingPool, ILendingPoolAddressesProvider, IERC20, IMockArbitrage } from "./Interfaces.sol";
+import { ILendingPool, ILendingPoolAddressesProvider, IERC20 } from "./Interfaces.sol";
+import { IJoeRouter02 } from "../interfaces/traderjoe/IJoeRouter02.sol"; 
 import { SafeMath } from "./Libraries.sol";
 import { Withdrawable } from "./Withdrawable.sol";
+// import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
+// import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 
 contract FlashloanDemo is FlashLoanReceiverBase, Withdrawable {
 
     event UpdatedArbitrageContract (address oldArbitrageContract, address newArbitrageContract);
     
-    IMockArbitrage arbitrageContract;
+    // IMockArbitrage arbitrageContract;
+    IJoeRouter02 public immutable joeRouter;
 
-    constructor(address _addressProvider, address _arbitrageContract) FlashLoanReceiverBase(_addressProvider) public {
-        arbitrageContract = IMockArbitrage(_arbitrageContract);
+    // constructor(address _addressProvider, address _arbitrageContract) FlashLoanReceiverBase(_addressProvider) public {
+    //     arbitrageContract = IMockArbitrage(_arbitrageContract);
+    // }
+    constructor(address _aaveLPAddressProvider, IJoeRouter02 _joeRouterAddress) FlashLoanReceiverBase(_aaveLPAddressProvider) public {
+        joeRouter = IJoeRouter02(_joeRouterAddress);
     }
 
     /**
@@ -47,7 +55,7 @@ contract FlashloanDemo is FlashLoanReceiverBase, Withdrawable {
         // the flashloaned amounts + premiums.
         // Therefore ensure your contract has enough to repay
         // these amounts.
-        arbitrageContract.takeArbitrage(assets[0]);
+        // arbitrageContract.takeArbitrage(assets[0]);
         
         // Approve the LendingPool contract allowance to *pull* the owed amount
         for (uint i = 0; i < assets.length; i++) {
