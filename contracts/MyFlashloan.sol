@@ -2,9 +2,11 @@
 pragma solidity >=0.6.6;
 
 import { FlashLoanReceiverBase } from "./FlashloanReceiverBase.sol";
-// import { ILendingPool, ILendingPoolAddressesProvider, IERC20, IMockArbitrage } from "./Interfaces.sol";
+// import { ILendingPool, ILendingPoolAddressesProvider, IERC20Joe, IMockArbitrage } from "./Interfaces.sol";
 import { ILendingPool, ILendingPoolAddressesProvider, IERC20 } from "./Interfaces.sol";
-import { IJoeRouter02 } from "../interfaces/traderjoe/IJoeRouter02.sol"; 
+import { IJoeRouter01 } from "../interfaces/traderjoe/IJoeRouter01.sol"; 
+import { IPangolinRouter } from "../interfaces/pangolin/IPangolinRouter.sol";
+import { IERC20Joe } from "../interfaces/traderjoe/IERC20.sol"; 
 import { SafeMath } from "./Libraries.sol";
 import { Withdrawable } from "./Withdrawable.sol";
 // import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
@@ -12,16 +14,18 @@ import { Withdrawable } from "./Withdrawable.sol";
 
 contract FlashloanDemo is FlashLoanReceiverBase, Withdrawable {
 
-    event UpdatedArbitrageContract (address oldArbitrageContract, address newArbitrageContract);
+    // event UpdatedArbitrageContract (address oldArbitrageContract, address newArbitrageContract);
     
     // IMockArbitrage arbitrageContract;
-    IJoeRouter02 public immutable joeRouter;
+    IJoeRouter01 public immutable joeRouter;
+    IPangolinRouter public immutable pangolinRouter;
 
     // constructor(address _addressProvider, address _arbitrageContract) FlashLoanReceiverBase(_addressProvider) public {
     //     arbitrageContract = IMockArbitrage(_arbitrageContract);
     // }
-    constructor(address _aaveLPAddressProvider, IJoeRouter02 _joeRouterAddress) FlashLoanReceiverBase(_aaveLPAddressProvider) public {
-        joeRouter = IJoeRouter02(_joeRouterAddress);
+    constructor(address _aaveLPAddressProvider, address _joeRouterAddress, address _pangolinRouterAddress) FlashLoanReceiverBase(_aaveLPAddressProvider) public {
+        joeRouter = IJoeRouter01(_joeRouterAddress);
+        pangolinRouter = IPangolinRouter(_pangolinRouterAddress);
     }
 
     /**
@@ -50,7 +54,8 @@ contract FlashloanDemo is FlashLoanReceiverBase, Withdrawable {
         // This contract now has the funds requested.
         // Your logic goes here.
         //
-        
+        _swap(amounts, params);
+
         // At the end of your logic above, this contract owes
         // the flashloaned amounts + premiums.
         // Therefore ensure your contract has enough to repay
@@ -59,18 +64,56 @@ contract FlashloanDemo is FlashLoanReceiverBase, Withdrawable {
         
         // Approve the LendingPool contract allowance to *pull* the owed amount
         for (uint i = 0; i < assets.length; i++) {
-            uint amountOwing = amounts[i].add(premiums[i]);
-            IERC20(assets[i]).approve(address(LENDING_POOL), amountOwing);
+            uint amountOwing = SafeMath.add(amounts[i], premiums[i]);
+            // uint amountOwing = amounts[i].add(premiums[i]);
+
+            IERC20Joe(assets[i]).approve(address(LENDING_POOL), amountOwing);
         }
 
         return true;
     }
 
-    function _flashloan(address[] memory assets, uint256[] memory amounts) internal {
+    function _swap(uint256[] calldata amounts, bytes calldata params) internal {
+        (bool _buyJoe, address _token0, address _token1) = abi.decode(params, (bool, address, address));
+        IERC20Joe token0 = IERC20Joe(_token0);
+        IERC20Joe token1 = IERC20Joe(_token1);
+        
+        address[] memory path0 = new address[](2);
+        path0[0] = _token0;
+        path0[1] = _token1;
+
+        address[] memory path1 = new address[](2);
+        path1[0] = _token1;
+        path1[1] = _token0;
+
+        if (_buyJoe) {
+            token0.approve(address(joeRouter), amounts[0]);
+            // joeRouter.swapExactAVAXForTokens{value: amounts[0]}(0, path0, address(this), block.timestamp + 60);
+            joeRouter.swapExactTokensForTokens(amounts[0], 0, path0, address(this), block.timestamp + 60);
+            uint256 amountReceived1 = token1.balanceOf(address(this));
+            token1.approve(address(pangolinRouter), amountReceived1);
+            // uint256[] memory amountReceived2 = pangolinRouter.swapExactTokensForAVAX(amountReceived1[0], 0, pangolinPath, address(this), block.timestamp + 60);
+            // pangolinRouter.swapExactTokensForAVAX(amountReceived1, 0, path1, address(this), block.timestamp + 60);
+            pangolinRouter.swapExactTokensForTokens(amountReceived1, 0, path1, address(this), block.timestamp + 60);
+
+        }
+        else {
+            token0.approve(address(pangolinRouter), amounts[0]);
+            // pangolinRouter.swapExactAVAXForTokens{value: amounts[0]}(0, path0, address(this), block.timestamp + 60);
+            pangolinRouter.swapExactTokensForTokens(amounts[0], 0, path0, address(this), block.timestamp + 60);
+            uint256 amountReceived1 = token1.balanceOf(address(this));
+            token1.approve(address(joeRouter), amountReceived1);
+            // uint256[] memory amountReceived2 = joeRouter.swapExactTokensForAVAX(amountReceived1[0], 0, path1, address(this), block.timestamp + 60);
+            // joeRouter.swapExactTokensForAVAX(amountReceived1, 0, path1, address(this), block.timestamp + 60);
+            joeRouter.swapExactTokensForTokens(amountReceived1, 0, path1, address(this), block.timestamp + 60);
+        }
+    }
+
+    function _flashloan(address[] memory assets, uint256[] memory amounts, bytes memory params) internal {
         address receiverAddress = address(this);
 
         address onBehalfOf = address(this);
-        bytes memory params = "";
+        // bytes memory params = "";
         uint16 referralCode = 0;
 
         uint256[] memory modes = new uint256[](assets.length);
@@ -94,8 +137,8 @@ contract FlashloanDemo is FlashLoanReceiverBase, Withdrawable {
     /*
      *  Flash loan wei amount worth of `_asset`
      */
-    function flashloan(address _asset, uint256 _amount) public onlyOwner {
-        bytes memory data = "";
+    function flashloan(address _asset, uint256 _amount, bool _buyJoe, address _token0, address _token1) public onlyOwner {
+        bytes memory params = abi.encode(_buyJoe, _token0, _token1);
         uint amount = _amount;
 
         address[] memory assets = new address[](1);
@@ -104,7 +147,7 @@ contract FlashloanDemo is FlashLoanReceiverBase, Withdrawable {
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = amount;
 
-        _flashloan(assets, amounts);
+        _flashloan(assets, amounts, params);
     }
 
     // function setArbitrageContract (address _newArbitrageContract) external {
